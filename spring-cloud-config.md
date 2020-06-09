@@ -1,6 +1,6 @@
 # spring cloud config
 
-## 安装和配置
+## 服务器端(安装和配置)
 
 ### pom.xml
 
@@ -120,9 +120,15 @@ public class ConfigServerApplication {
 }
 ```
 
-## gitlab创建属性文件
+## 客户端
+
+### bootstrap.yml
+
+在/src/main/resources目录下，创建bootstrap.yml，内容包括：应用名、config客户端属性配置、config解密key属性配置，除了这些属性外，应用的其它所有属性全部都放在gitlab上集中管理。
 
 ### 创建属性文件
+
+在gitlab上创建：
 
 config-repo仓库
 
@@ -140,9 +146,11 @@ dy-eureka.yml（公共属性文件）、dy-eureka-dev.yml（开发环境属性�
 
 当你通过config server访问dy-eureka-dev.yml文件（例如：http://192.168.5.76:9000/dy-eureka-dev.yml），config server会自动会先读取dy-eureka.yml（公共属性文件），然后再读取dy-eureka-dev.yml（开发环境属性文件），然后把两个属性文件内容合并返回给请求调用者，如果两个文件有重复的属性，则使用dev文件属性覆盖公共属性。
 
+注意：bootstrap.yml内的属性无法被applicaton.yml内的属性覆盖。
+
 ### 变量
 
-yaml文件内任何一个属性都可以作为变量，都可以使用${xxx}使用变量，你也可以专门定义某个属性为变量，例如：
+yaml文件内任何一个属性都可以作为变量，都可以使用${xxx}使用变量，你也可以专门定义某个属性为变量，变量的替换是由config server来完成的，例如：
 
 ```yaml
 server:
@@ -153,7 +161,71 @@ check:
 
 ### 例子：dy-eurkeka
 
+#### bootstrap.yml
+
+在项目本地/src/main/resources目录下创建bootstrap.yml文件，如下：
+
+```yaml
+spring:
+  application:
+    name: dy-eureka
+  profiles:
+    active: dev
+# 开发环境        
+---
+spring:
+  profiles: dev
+  cloud:
+    config:
+      uri: http://192.168.5.76:9000
+      profile: ${spring.profiles}  # 指定从config server配置的git上拉取的文件(例如:dy-eureka-dev.yml)
+      username: dy-config   # config server的basic认证的user
+      password: 12345678 # config server的basic认证的password
+# 测试环境
+---
+spring:
+  profiles: test
+  cloud:
+    config:
+      uri: http://192.168.5.76:9000
+      profile: ${spring.profiles}  # 指定从config server配置的git上拉取的文件(例如:dy-eureka-test.yml)
+      username: dy-config   # config server的basic认证的user
+      password: 12345678 # config server的basic认证的password      
+# 学习环境
+---
+spring:
+  profiles: study
+  cloud:
+    config:
+      uri: http://10.60.33.18:9000
+      profile: ${spring.profiles}  # 指定从config server配置的git上拉取的文件(例如:dy-eureka-study.yml)
+      username: dy-config   # config server的basic认证的user
+      password: xxxxxx # config server的basic认证的password
+# 生产环境(eureka1)
+---
+spring:
+  profiles: proc_eureka1
+  cloud:
+    config:
+      uri: http://10.60.32.198:9000
+      profile: ${spring.profiles}  # 指定从config server配置的git上拉取的文件(例如:dy-eureka-proc_eureka1.yml)
+      username: dy-config   # config server的basic认证的user
+      password: xxxxxx # config server的basic认证的password 
+# 生产环境(eureka2)
+---
+spring:
+  profiles: proc_eureka2
+  cloud:
+    config:
+      uri: http://10.60.32.198:9000
+      profile: ${spring.profiles}  # 指定从config server配置的git上拉取的文件(例如:dy-eureka-proc_eureka2.yml)
+      username: dy-config   # config server的basic认证的user
+      password: xxxxxx # config server的basic认证的password                            
+```
+
 #### dy-eureka.yml(公共属性)
+
+在gitlab上创建config-repo/dy-eureka/dy-eureka.yml文件
 
 ```yaml
 server:
@@ -175,6 +247,8 @@ spring:
 ```
 
 #### dy-eureka-dev.yml(开发环境属性)
+
+在gitlab上创建config-repo/dy-eureka/dy-eureka-dev.yml文件
 
 ```yaml
 # 开发环境配置 
