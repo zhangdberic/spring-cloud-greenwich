@@ -156,8 +156,8 @@ eureka:
     # 关闭自我保护模式
     enable-self-preservation: false
   instance: 
-    # eureka的主机名(配置为本机ip地址)
-    hostname: 192.168.5.76
+    # eureka的主机名(单机模式配置localhost)  
+    hostname: localhost
   client:
     # 开发环境关闭获取注册信息
     fetch-registry: false
@@ -191,8 +191,8 @@ eureka:
     # 关闭自我保护模式
     enable-self-preservation: false
   instance: 
-    # eureka的主机名(配置为本机ip地址)  
-    hostname: 192.168.5.76
+    # eureka的主机名(单机模式配置localhost)  
+    hostname: localhost
   client:
     # 开发环境关闭获取注册信息
     fetch-registry: false
@@ -227,8 +227,8 @@ eureka:
     # 关闭自我保护模式
     enable-self-preservation: false
   instance: 
-    # eureka的主机名(配置为本机ip地址)
-    hostname: 10.60.33.xx
+    # eureka的主机名(单机模式配置localhost)  
+    hostname: localhost
   client:
     # 开发环境关闭获取注册信息
     fetch-registry: false
