@@ -36,7 +36,7 @@ spring-cloud-starter-bus-amqp：基于rabbitmq实现的属性刷新，服务器�
 
 spring-boot-starter-security：实现config server访问的安全认证，使用用户名和密码才能访问配置服务器。
 
-spring-boot-starter-actuator：spring boot actuator，实现属性刷新。
+spring-boot-starter-actuator：spring boot actuator，实现属性刷新(/actuator/bus-refresh)。
 
 如果你不需要考虑安全，不需要使用属性刷新，则只需要spring-cloud-config-server包就可以提供config server服务。
 
@@ -122,11 +122,39 @@ public class ConfigServerApplication {
 
 ## 客户端
 
-### bootstrap.yml
+### pom.xml
+
+```xml
+		<!-- spring cloud config client -->
+		<dependency>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-starter-config</artifactId>
+		</dependency>
+		<!-- spring boot actuator -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
+		<!-- spring cloud bus -->
+		<dependency>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-starter-bus-amqp</artifactId>
+		</dependency>	
+```
+
+spring-cloud-starter-config：config客户端核心依赖包；
+
+spring-cloud-starter-bus-amqp：属性刷新使用；
+
+spring-boot-starter-actuator：实现属性刷新(/actuator/bus-refresh)。
+
+### yaml
+
+#### bootstrap.yml
 
 在/src/main/resources目录下，创建bootstrap.yml，内容包括：应用名、config客户端属性配置、config解密key属性配置，除了这些属性外，应用的其它所有属性全部都放在gitlab上集中管理。
 
-### 创建属性文件
+#### gitlab创建属性文件
 
 在gitlab上创建：
 
@@ -142,13 +170,13 @@ config-repo仓库
 
 dy-eureka.yml（公共属性文件）、dy-eureka-dev.yml（开发环境属性文件）、dy-eureka-test.yml（测试环境属性文件）；
 
-### 合并属性和覆盖
+#### 合并属性和覆盖
 
 当你通过config server访问dy-eureka-dev.yml文件（例如：http://192.168.5.76:9000/dy-eureka-dev.yml），config server会自动会先读取dy-eureka.yml（公共属性文件），然后再读取dy-eureka-dev.yml（开发环境属性文件），然后把两个属性文件内容合并返回给请求调用者，如果两个文件有重复的属性，则使用dev文件属性覆盖公共属性。
 
 注意：bootstrap.yml内的属性无法被applicaton.yml内的属性覆盖。
 
-### 变量
+#### 变量
 
 yaml文件内任何一个属性都可以作为变量，都可以使用${xxx}使用变量，你也可以专门定义某个属性为变量，变量的替换是由config server来完成的，例如：
 
@@ -159,9 +187,9 @@ check:
   url: http://localhost:${server.port}
 ```
 
-### 例子：dy-eurkeka
+#### 完整例子(dy-eurkeka)
 
-#### bootstrap.yml
+##### bootstrap.yml
 
 在项目本地/src/main/resources目录下创建bootstrap.yml文件，如下：
 
@@ -223,7 +251,7 @@ spring:
       password: xxxxxx # config server的basic认证的password                            
 ```
 
-#### dy-eureka.yml(公共属性)
+##### dy-eureka.yml(公共属性)
 
 在gitlab上创建config-repo/dy-eureka/dy-eureka.yml文件
 
@@ -246,7 +274,7 @@ spring:
       force: true
 ```
 
-#### dy-eureka-dev.yml(开发环境属性)
+##### dy-eureka-dev.yml(开发环境属性)
 
 在gitlab上创建config-repo/dy-eureka/dy-eureka-dev.yml文件
 
@@ -280,7 +308,7 @@ eureka:
       defaultZone: http://${spring.security.user.name}:${spring.security.user.password}@${eureka.instance.hostname}:${server.port}/eureka/
 ```
 
-#### 请求返回内容
+##### 请求返回内容
 
 请求URL：http://192.168.5.76:9000/dy-eureka-dev.yml
 

@@ -1,6 +1,6 @@
 # spring cloud eureka
 
-## 安装和配置
+## 服务器端(安装和配置)
 
 ### pom.xml
 
