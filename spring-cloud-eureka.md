@@ -1,6 +1,6 @@
 # spring cloud eureka
 
-## 服务器端(安装和配置)
+## 服务器端(eureka server)
 
 ### pom.xml
 
@@ -307,21 +307,63 @@ eureka:
 @SpringBootApplication
 @EnableEurekaServer
 public class EurekaServerApplication {
-	
+
 	public static void main(String[] args) {
 		SpringApplication.run(EurekaServerApplication.class, args);
 	}
-	
-    @EnableWebSecurity
-    class WebSecurityConfig extends WebSecurityConfigurerAdapter {
-        @Override
-        protected void configure(HttpSecurity httpSecurity) throws Exception {
-            // Spring Security 默认开启了所有 CSRF 攻击防御，需要禁用 /eureka 的防御
-            httpSecurity.csrf().ignoringAntMatchers("/eureka/**");
-            super.configure(httpSecurity);
-        }
-    }
+
+	@EnableWebSecurity
+	class WebSecurityConfig extends WebSecurityConfigurerAdapter {
+		@Override
+		protected void configure(HttpSecurity httpSecurity) throws Exception {
+			// Spring Security 默认开启了http页面认证登陆，需要修改为http basic模式
+			// Spring Security 默认开启了所有 CSRF 攻击防御，需要禁用 /eureka 的防御
+			httpSecurity.authorizeRequests().anyRequest().authenticated().and().httpBasic().and().csrf()
+					.ignoringAntMatchers("/eureka/**");
+		}
+	}
 
 }
 ```
 
+## Eureka Restful
+
+#### 查看注册服务(/eureka/apps)
+
+http://192.168.5.76:8761/eureka/apps/
+
+
+
+## 客户端(eureka client)
+
+### pom.xml
+
+```xml
+		<!-- spring cloud eureka client -->
+		<dependency>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+		</dependency>
+```
+
+### application-xxx.yml
+
+修改gitlab上的应用属性配置文件，加入如下eureka客户端配置。
+
+```yaml
+# eureka 客户端
+eureka:
+  instance: 
+    # 使用ip地址注册到eureka服务器(多ip的情况下和bootstrap.xml的spring.inetutils.preferred-networks属性配合使用),默认值false使用主机名注册(/etc/hosts的第一行)
+    prefer-ip-address: true
+    # 注册到eureka服务器的实例id,格式为:本机ip地址:服务名:端口(多ip情况下和bootstrap.xml的spring.inetutils.preferred-networks属性配合使用)
+    instance-id: ${spring.cloud.client.ip-address}:${spring.application.name}:${server.port}
+  client:
+    service-url:
+      # eureka注册中心位置
+      defaultZone: http://dy-eureka:12345678@192.168.5.76:8761/eureka/
+```
+
+多网卡的情况下，需要配置bootstrap.xml的spring.cloud.inetutils.preferred-networks属性配合使用。
+
+eureka集群的情况下，eureka.client.service-url.defaultZone属性配置多个eureka注册位置url，用逗号分隔。

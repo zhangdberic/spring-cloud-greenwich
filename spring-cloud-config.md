@@ -116,6 +116,15 @@ public class ConfigServerApplication {
 	public static void main(String[] args) {
 		SpringApplication.run(ConfigServerApplication.class, args);
 	}
+	
+	@EnableWebSecurity
+	class WebSecurityConfig extends WebSecurityConfigurerAdapter {
+		@Override
+		protected void configure(HttpSecurity httpSecurity) throws Exception {
+			// Spring Security 默认开启了http页面认证登陆，需要修改为http basic模式
+			httpSecurity.authorizeRequests().anyRequest().authenticated().and().httpBasic();
+		}
+	}
 
 }
 ```
