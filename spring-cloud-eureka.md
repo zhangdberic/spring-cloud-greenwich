@@ -367,3 +367,16 @@ eureka:
 多网卡的情况下，需要配置bootstrap.xml的spring.cloud.inetutils.preferred-networks属性配合使用。
 
 eureka集群的情况下，eureka.client.service-url.defaultZone属性配置多个eureka注册位置url，用逗号分隔。
+
+## FAQ
+
+```
+eureka":{"description":"Remote status from Eureka server","status":"UNKNOWN"
+```
+
+健康检查：出现如上的状况，可能是由于配置了eureka.client.fetch-registry=false(不获取eureka内的服务信息)。这个不是错误，你可以根据项目情况来决定是否需要设置这个属性值。
+
+```
+    # 不获取注册信息,只为了注册本身到eureka方便spring boot admin发现
+    fetch-registry: false
+```

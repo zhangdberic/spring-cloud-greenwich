@@ -51,6 +51,17 @@ spring:
     active: dev
   application:
     name: dy-config # 应用名称
+  cloud:
+    config:
+      server:
+        encrypt:
+          enabled: false  # 配置属性客户端解密
+# 开发环境        
+---
+spring:
+  profiles: dev
+encrypt:
+  key: 12345678 # 配置文件加密秘钥
 ```
 
 #### application.yml
@@ -69,14 +80,22 @@ spring:
       charset: UTF-8
       enabled: true
       force: true
+# actuator       
+management:
+  endpoint:
+    health:
+      show-details: always           
+  endpoints:
+    web:
+      exposure:
+        include:
+        - "*"
 ```
 
 #### application-dev.yml
 
 ```yaml
 # 开发环境配置 
-encrypt:
-  key: 12345678 # 配置文件加密秘钥
 spring:
   # 开启安全认证
   security:
@@ -101,7 +120,7 @@ spring:
     host: 192.168.5.76
     port: 5672
     username: zhangdb
-    password: 12345678    
+    password: 12345678 
 ```
 
 ### @EnableConfigServer
@@ -122,7 +141,8 @@ public class ConfigServerApplication {
 		@Override
 		protected void configure(HttpSecurity httpSecurity) throws Exception {
 			// Spring Security 默认开启了http页面认证登陆，需要修改为http basic模式
-			httpSecurity.authorizeRequests().anyRequest().authenticated().and().httpBasic();
+			httpSecurity.authorizeRequests().anyRequest().authenticated().and().httpBasic().and().csrf()
+			.ignoringAntMatchers("/actuator/**","/encrypt","/decrypt");
 		}
 	}
 
@@ -210,6 +230,8 @@ spring:
     active: dev
 # 开发环境        
 ---
+encrypt:
+  key: 12345678
 spring:
   profiles: dev
   cloud:
@@ -220,6 +242,8 @@ spring:
       password: 12345678 # config server的basic认证的password
 # 测试环境
 ---
+encrypt:
+  key: 12345678
 spring:
   profiles: test
   cloud:
@@ -230,6 +254,8 @@ spring:
       password: 12345678 # config server的basic认证的password      
 # 学习环境
 ---
+encrypt:
+  key: 12345678
 spring:
   profiles: study
   cloud:
@@ -240,6 +266,8 @@ spring:
       password: xxxxxx # config server的basic认证的password
 # 生产环境(eureka1)
 ---
+encrypt:
+  key: 12345678
 spring:
   profiles: proc_eureka1
   cloud:
@@ -250,6 +278,8 @@ spring:
       password: xxxxxx # config server的basic认证的password 
 # 生产环境(eureka2)
 ---
+encrypt:
+  key: 12345678
 spring:
   profiles: proc_eureka2
   cloud:
@@ -354,5 +384,87 @@ spring:
     user:
       name: dy-eureka
       password: 12345678
+```
+
+### 发送刷新(bus-refresh)请求
+
+```
+curl -u dy-config:12345678 -X POST http://192.168.5.76:29000/actuator/bus-refresh/sgw
+```
+
+
+
+### 属性加密
+
+#### 1.spring cloud config服务器端
+
+**bootstrap.ym**l加入encrypt.key属性，例如：
+
+```yaml
+# 学习环境        
+---
+spring:
+  profiles: study
+encrypt:
+  key: xxxxx  # 加密key
+  cloud:
+    config:
+      server:
+        encrypt:
+          enabled: false # 由Config client自行解密，无法通过浏览器直接访问config server来获取解密后属性值
+```
+
+**WebSecurityConfig**配置csrf忽略/encrypt和/descrypt的
+
+```java
+	@EnableWebSecurity
+	class WebSecurityConfig extends WebSecurityConfigurerAdapter {
+		@Override
+		protected void configure(HttpSecurity httpSecurity) throws Exception {
+			// Spring Security 默认开启了http页面认证登陆，需要修改为http basic模式
+			httpSecurity.authorizeRequests().anyRequest().authenticated().and().httpBasic().and().csrf()
+			.ignoringAntMatchers("/actuator/**","/encrypt","/decrypt");
+			
+		}
+	}
+```
+
+#### 2.获取加密值
+
+发送请求计算属性加密值
+
+```
+curl -u dy-config:Study-401 http://10.60.33.18:9000/encrypt -d mysecret
+```
+
+例如：加密后的值
+
+5754c1c69c2ee67fc31314965750c9444c4c8d53b860726affc7afa465fae8de
+
+#### 3.spring cloud config客户端
+
+**bootstrap.ym**l加入encrypt.key属性，并且spring cloud config的服务器和客户端的encrypt.key属性值必须相同，例如：
+
+```yaml
+# 学习环境        
+---
+spring:
+  profiles: study
+encrypt:
+  key: xxxxx 
+```
+
+修改yaml属性为加密值，注意：点引号、{cipher}前缀
+
+```yaml
+spring: 
+  datasource:
+    password: '{cipher}f86ff2a9e2cee0cb5a5ff1c1060862dcdb64afe3287b8256cb27cd0c440887f6'
+```
+
+#### 解密
+
+```
+curl -u dy-config:Study-401 http://10.60.33.18:9000/decrypt -d f86ff2a9e2cee0cb5a5ff1c1060862dcdb64afe3287b8256cb27cd0c440887f6
 ```
 

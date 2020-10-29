@@ -48,6 +48,8 @@ zuul:
 
   POST请求，发送：http://config-ip:config-port/bus/refresh?destination=sc-zuul:** 
 
+curl -X POST http://192.168.5.54:9000/bus/refresh?destination=sc-zuul:** 
+
 ### 1.3 ZuulApplication.java
 
 ```java
@@ -100,9 +102,9 @@ zuul:
 
 ### 2.2 敏感的Header设置
 
-设置哪些Header可以穿透zuul传递到服务。
+zuul.sensitive-headers属性设置哪些请求头不能被传递到服务，默认：Cookie,Set-Cookie,Authorization，请求头不能被传递到服务。
 
-例如，设置zuul的sc-sampleservice服务路由，允许三个header请求头达到sc-sampleservice服务。
+你可以通过设置：zuul.sensitive-headers=空，来允许这三个请求头传递到服务。例如：前后端分离开发经常要使用cookie来存放token，你需要显示的从zuul.sensitive-headers中去掉Cookie，否则后台服务无法获取到这个使用cookie为载体的token值。
 
 ```yaml
 # 配置zuul
@@ -118,16 +120,10 @@ zuul:
   	# 配置sc-sampleservice服务路由
     sc-sampleservice: 
       path: /sampleservice/** 
-      sensitive-headers: Cookie,Set-Cookie,Authorization
+      sensitive-headers: 
 ```
 
-关注：sensitive-headers: Cookie,Set-Cookie,Authorization
-
-验证：查看zuul路由配置信息，http://192.168.5.31:8090/routes?format=details，返回：
-
-![](images/zuul-sensitive-headers.png)
-
-你也可以通过设置，zuul.ignoredHeaders 来忽略一些Header。
+你也可以通过设置，zuul.ignoredHeaders来禁止那些请求头传递到服务，查看zuul代码，zuul.sensitive-headers的请求头会被存放到zuul.ignoredHeaders。
 
 以上的配置支持/bus动态刷新配置。
 
@@ -893,6 +889,32 @@ ribbonTimeout超时报错：Caused by: java.net.SocketTimeoutException: Read tim
 
 hystrixTimeout超时报错：Caused by: com.netflix.hystrix.exception.HystrixRuntimeException: dfss-upload timed-out and no fallback available.
 
+#### 2.8.4 ribbon和zuul.host timeout
+
+ribbon.ReadTimeout， ribbon.SocketTimeout这两个就是ribbon超时时间设置，当在yml写时，应该是没有提示的，给人的感觉好像是不是这么配的一样，其实不用管它，直接配上就生效了。
+还有zuul.host.connect-timeout-millis， zuul.host.socket-timeout-millis这两个配置，这两个和上面的ribbon都是配超时的。区别在于，如果路由方式是serviceId的方式，那么ribbon的生效，如果是url的方式，则zuul.host开头的生效。（此处重要！使用serviceId路由和url路由是不一样的超时策略）。
+
+zuul配置设置操作，ribbon的超时和zuul.host的超时都要设置
+
+```yaml
+zuul:
+  host:
+    max-per-route-connections: 200      
+    max-total-connections: 500
+    socket-timeout-millis: 60000
+    connect-timeout-millis: 1000 
+
+ribbon: 
+  restclient:  
+    enabled: true
+  ReadTimeout: 60000
+  ConnectTimeout: 1000
+  MaxConnectionsPerHost: 200
+  MaxTotalConnections: 500 
+```
+
+
+
 
 
 ### 2.9 zuul使用ribbon重试
@@ -936,6 +958,64 @@ server:
     accept-count: 50
 ```
 
+### 2.12 路由转发请求数限制
+
+ribbon.xxxx和zuul.host.xxx两个都要设置，区别在于，如果路由方式是serviceId的方式，那么ribbon的生效，如果是url的方式，则zuul.host开头的生效，具体见下面的2.13和2.14介绍。
+
+zuul.host.max-per-route-connections，用于在url转发方式下，每个host的同时转发连接数上限。
+
+zuul.host.max-total-connections，用于在url转发方式下，所有host的同时转发连接数上限。
+
+ribbon.MaxConnectionsPerHost，用于在serviceId转发方式下，每个host的同时转发连接数上限。
+
+ribbon.MaxTotalConnections，用于在serviceId转发方式下，所有host的同时转发连接数上限。
+
+```yaml
+zuul:
+  host:
+    max-per-route-connections: 200      
+    max-total-connections: 500
+
+ribbon: 
+  restclient:  
+    enabled: true
+  MaxConnectionsPerHost: 200
+  MaxTotalConnections: 500 
+
+```
+
+### 2.13 ribbon属性配置
+
+**如果路由方式是serviceId的方式，那么ribbon的生效**，例如：
+
+1.基于eureka发现服务，自动转发不用认为干预。
+
+2.RequestContext.getCurrentContext().set(FilterConstants.SERVICE_ID_KEY, serviceId);
+
+ribbon可以配置的属性如下：
+
+com.netflix.client.config.CommonClientConfigKey，查看这个类，类内的某个常量对应ribbon.xxxx配置，例如：
+
+```java
+public static final IClientConfigKey<Integer> MaxConnectionsPerHost = new CommonClientConfigKey<Integer>("MaxConnectionsPerHost"){};
+```
+
+对应：ribbon.MaxConnectionsPerHost的配置。
+
+### 2.14 zuul.host属性配置
+
+**如果使用url方式转发请求(非serviceId方式)，那么zuul.host属性配置生效**，例如：
+
+RequestContext.getCurrentContext().setRouteHost(routeUrl);
+
+zuul.host可配置的属性如下：
+
+org.springframework.cloud.netflix.zuul.filters.ZuulProperties.Host，查看这个类，类内的某个属性对应zuul.host.xxx配置，例如：
+
+```java
+private int maxTotalConnections = 200;
+```
+
 
 
 ### 3. Zuul高可用
@@ -972,15 +1052,61 @@ http://192.168.5.31:8090/api/dongyuit/index.html
 
 
 
+## zuul的actuator
 
+### 查看过滤器(ZuulFilter)
+
+http://192.168.5.54:27070/actuator/filters
+
+### 查看路由配置(Route)
+
+http://192.168.5.54:27070/actuator/routes
+
+其会返回：eureka配置的服务、yaml配置的服务，zuul可以路由到的所有服务。
+
+例如：结果如下
+
+```
+{"/services":"virtual-service","/dy-eureka/**":"dy-eureka","/sgw-manager/**":"sgw-manager","/dy-admin/**":"dy-admin","/dfss-fss/**":"dfss-fss"}
+```
+
+查看路由配置详细信息(Route details)
+
+http://10.60.33.21:27070/actuator/routes/details
+
+```json
+{"/services":{"id":"services","fullPath":"/services","location":"virtual-service","path":"/services","retryable":false,"customSensitiveHeaders":false,"prefixStripped":true},"/dy-eureka/**":{"id":"dy-eureka","fullPath":"/dy-eureka/**","location":"dy-eureka","path":"/**","prefix":"/dy-eureka","retryable":false,"customSensitiveHeaders":false,"prefixStripped":true},"/sgw-manager/**":{"id":"sgw-manager","fullPath":"/sgw-manager/**","location":"sgw-manager","path":"/**","prefix":"/sgw-manager","retryable":false,"customSensitiveHeaders":false,"prefixStripped":true},"/dy-admin/**":{"id":"dy-admin","fullPath":"/dy-admin/**","location":"dy-admin","path":"/**","prefix":"/dy-admin","retryable":false,"customSensitiveHeaders":false,"prefixStripped":true},"/dfss-fss/**":{"id":"dfss-fss","fullPath":"/dfss-fss/**","location":"dfss-fss","path":"/**","prefix":"/dfss-fss","retryable":false,"customSensitiveHeaders":false,"prefixStripped":true}}
+```
+
+
+
+### 查看hystrix信息
+
+ http://192.168.5.54:27070/actuator/hystrix.stream
 
 
 
 ## FAQ
 
-### 1.安全问题
+**Content-length different from byte array length! cl=xxx, array=0**
 
-actutor安全问题？，待以后oauth2解决。
+这个警告可以忽略。
+
+这个警告日志，是由于你的http请求中带有Content-Length请求头，而zuul的HttpServletRequestWrapper的代码，使用req.getInputStream()获取到0个字节，两个一比较不相等，系统输出警告。警告的cl=xxx为请求头Content-Length的值，array=0为req.getInputStream()获取的字节数。你可以通过查看zuul的HttpServletRequestWrapper#parseRequest()代码，来验证上面的结论。
+
+这个警告可以忽略，因为使用application/x-www-form-urlencoded请求的内容，可以使用request.getParameter()来解析，tomcat只会解析一次(读取req.getInputStream()返回解析到parameter对象)，解析后就缓存到request请求对象中，同时req.getInputStream()内容会读取已经结束，因此你再调用req.getInputStream()就会返回-1。而HttpServletRequestWrapper的目的也是对请求进行包装，解析请求的参数，然后存放一个HashMap<String, String[]> parameters对象，其实现原理和tomcat解析请求参数类同。因为tomcat已经解析过请求参数了，因此zuul没有必要再解析了，这段代码本身只想对性能没有什么影响，但感觉已经没有必要了，只是起到了代码保护作用。用的最多的是org.springframework.cloud.netflix.zuul.filters.pre.FormBodyWrapperFilter，如果基于json发送请求内容，可以禁用FormBodyWrapperFilter过滤器。
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
