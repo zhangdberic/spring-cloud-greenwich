@@ -40,7 +40,7 @@ spring-cloud-starter-bus-amqp：支持属性刷新。
 
 spring-boot-starter-actuator：提供了spring boot acturator支持。
 
-spring-boot-starter-security：eureka server的认证访问，基于用户名和密码访问eureka sever。
+spring-boot-starter-security：eureka server的认证访问，基于用户名和密码访问eureka sever和actuator。
 
 这里只有spring-cloud-starter-netflix-eureka-server是必须的依赖包，其它根据情况添加。
 
@@ -49,6 +49,8 @@ spring-boot-starter-security：eureka server的认证访问，基于用户名和
 #### bootstrap.yml
 
 /src/main/resources目录下创建bootstrap.yml文件，内容如下：
+
+这使用一个典型的基于spring cloud config配置的bootstrap.yml配置文件，其内只包括基本的的配置，具体的配置都存放在gitlab上。
 
 ```yaml
 spring:
@@ -95,7 +97,10 @@ spring:
       uri: http://10.60.32.xxx:9000
       profile: ${spring.profiles}  # 指定从config server配置的git上拉取的文件(例如:dy-eureka-proc_eureka1.yml)
       username: dy-config   # config server的basic认证的user
-      password: xxxxxx # config server的basic认证的password 
+      password: xxxxxx # config server的basic认证的password
+    inetutils:
+      # 指定获取ip地址的范围,可以是ip段(多ip情况下使用)
+      preferred-networks: 10.60      
 # 生产环境(eureka2)
 ---
 spring:
@@ -105,7 +110,10 @@ spring:
       uri: http://10.60.32.xxx:9000
       profile: ${spring.profiles}  # 指定从config server配置的git上拉取的文件(例如:dy-eureka-proc_eureka2.yml)
       username: dy-config   # config server的basic认证的user
-      password: xxxxxx # config server的basic认证的password                            
+      password: xxxxxx # config server的basic认证的password
+    inetutils:
+      # 指定获取ip地址的范围,可以是ip段(多ip情况下使用)
+      preferred-networks: 10.60
 ```
 
 这里配置了5个环境，每个环境属性都设置了当前的profile和连接git配置。
@@ -113,6 +121,8 @@ spring:
 #### dy-eureka.yml
 
 gitlab上config-repo/dy-eureka/dy-eureka.yml，**公共的eureka属性**，内容如下：
+
+这是一个比较典型的**项目名称.yml**的配置内容，定义了一些整个系统级别的配置属性和运行环境无关。
 
 ```yml
 server:
@@ -131,6 +141,16 @@ spring:
       charset: UTF-8
       enabled: true
       force: true
+# actuator       
+management:
+  endpoint:
+    health:
+      show-details: always           
+  endpoints:
+    web:
+      exposure:
+        include:
+        - "*"      
 ```
 
 #### dy-eureka-dev.yml
@@ -266,13 +286,19 @@ spring:
     password: xxxxxx
 eureka:
   instance: 
-    # eureka的主机名(配置为本机ip地址)
-    hostname: 10.60.32.xx1
+    # 使用ip地址注册到eureka服务器(多ip的情况下和bootstrap.xml的spring.inetutils.preferred-networks属性配合使用),默认值false使用主机名注册(/etc/hosts的第一行)
+    prefer-ip-address: true
+    # 注册到eureka服务器的实例id,格式为:本机ip地址:服务名:端口(多ip情况下和bootstrap.xml的spring.inetutils.preferred-networks属性配合使用)
+    instance-id: ${spring.cloud.client.ip-address}:${spring.application.name}:${server.port}
+    # 注册security用户名和密码,供spring boot admin访问
+    metadata-map:
+      # 当前应用配置的spring security用户名和密码
+      user.name: ${spring.security.user.name}
+      user.password: ${spring.security.user.password} 
   client:
     service-url:
       # eureka注册中心位置(集群环境下为另一台eureka服务器,理解为注册本机eureka到另一台eureka服务器,并且每隔30秒获取另一台eureka服务器上的服务注册信息)
-      defaultZone: http://${spring.security.user.name}:${spring.security.user.password}@10.60.32.xx2:${server.port}/eureka/
-
+      defaultZone: http://${spring.security.user.name}:${spring.security.user.password}@10.60.32.197:${server.port}/eureka/
 ```
 
 #### dy-eureka-proc_eureka2.yml
@@ -293,12 +319,20 @@ spring:
     password: xxxxxx
 eureka:
   instance: 
-    # eureka的主机名(配置为本机ip地址)
-    hostname: 10.60.32.xx2
+    # 使用ip地址注册到eureka服务器(多ip的情况下和bootstrap.xml的spring.inetutils.preferred-networks属性配合使用),默认值false使用主机名注册(/etc/hosts的第一行)
+    prefer-ip-address: true
+    # 注册到eureka服务器的实例id,格式为:本机ip地址:服务名:端口(多ip情况下和bootstrap.xml的spring.inetutils.preferred-networks属性配合使用)
+    instance-id: ${spring.cloud.client.ip-address}:${spring.application.name}:${server.port}
+    # 注册security用户名和密码,供spring boot admin访问
+    metadata-map:
+      # 当前应用配置的spring security用户名和密码
+      user.name: ${spring.security.user.name}
+      user.password: ${spring.security.user.password}     
   client:
     service-url:
       # eureka注册中心位置(集群环境下为另一台eureka服务器,理解为注册本机eureka到另一台eureka服务器,并且每隔30秒获取另一台eureka服务器上的服务注册信息)
-      defaultZone: http://${spring.security.user.name}:${spring.security.user.password}@10.60.32.xx1:${server.port}/eureka/
+      defaultZone: http://${spring.security.user.name}:${spring.security.user.password}@10.60.32.198:${server.port}/eureka/
+
 ```
 
 ### @EnableEurekaServer
@@ -319,7 +353,7 @@ public class EurekaServerApplication {
 			// Spring Security 默认开启了http页面认证登陆，需要修改为http basic模式
 			// Spring Security 默认开启了所有 CSRF 攻击防御，需要禁用 /eureka 的防御
 			httpSecurity.authorizeRequests().anyRequest().authenticated().and().httpBasic().and().csrf()
-					.ignoringAntMatchers("/eureka/**");
+					.ignoringAntMatchers("/eureka/**","/actuator/**");
 		}
 	}
 
@@ -358,10 +392,16 @@ eureka:
     prefer-ip-address: true
     # 注册到eureka服务器的实例id,格式为:本机ip地址:服务名:端口(多ip情况下和bootstrap.xml的spring.inetutils.preferred-networks属性配合使用)
     instance-id: ${spring.cloud.client.ip-address}:${spring.application.name}:${server.port}
+    # 注册security用户名和密码,供spring boot admin访问
+    metadata-map:
+      # 当前应用配置的spring security用户名和密码
+      user.name: ${spring.security.user.name}
+      user.password: ${spring.security.user.password}  
   client:
     service-url:
       # eureka注册中心位置
-      defaultZone: http://dy-eureka:12345678@192.168.5.76:8761/eureka/
+      defaultZone: http://dy-eureka:xxxx@10.60.32.198:8761/eureka/,http://dy-eureka:xxxx@10.60.32.197:8761/eureka/ 
+
 ```
 
 多网卡的情况下，需要配置bootstrap.xml的spring.cloud.inetutils.preferred-networks属性配合使用。

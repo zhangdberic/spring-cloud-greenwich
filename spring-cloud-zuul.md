@@ -6,8 +6,6 @@
 
 注意：尽管zuul起到了服务网关的作用，但还是强烈建议在生产环境中**zuul一定要前置nginx**。
 
-![](images/zuul1.png)
-
 ## 1. zuul服务器配置
 
 ### 1.1 pom.xml
@@ -44,11 +42,13 @@ zuul:
 
 2. 通过routes配置可以指定服务的请求路径前缀和服务ID之间的映射(类似于DNS)，这样即使服务ID修改了，对外提供的URL不变。
 
-3. 动态刷新路由配置(routes)，通过测试Edgware.SR6版本可以做到，git修改配置后，/bus刷新马上生效，无须重新启动zuul。
+3. 动态刷新路由配置(routes)，通过测试可以做到，git修改配置后，/bus刷新马上生效，无须重新启动zuul。
 
-  POST请求，发送：http://config-ip:config-port/bus/refresh?destination=sc-zuul:** 
+   ```
+   curl -u dy-config:12345678 -X POST http://192.168.5.54:9000/actuator/bus-refresh/sgw:** 
+   ```
 
-curl -X POST http://192.168.5.54:9000/bus/refresh?destination=sc-zuul:** 
+   
 
 ### 1.3 ZuulApplication.java
 
@@ -66,11 +66,23 @@ public class ZuulApplication {
 
 ### 1.4 验证zuul启动是否成功
 
-浏览器请求：http://zuul-ip:zuul-port/routes，查看返回的服务路由信息。
+浏览器请求：http://zuul-ip:actuator-port/actuator/routes，查看返回的服务路由信息。
 
-查看路由详细信息：http://192.168.5.31:8090/routes?format=details
+```
+http://192.168.5.54:27070/actuator/routes
+```
 
-查看应用的过滤器信息：http://192.168.5.31:8090/filters
+查看路由详细信息：http://zuul-ip:actuator-port/actuator/routes/details
+
+```
+http://192.168.5.54:27070/actuator/routes/details
+```
+
+查看应用的过滤器信息：http://zuul-ip:actuator-port/actuator/filters
+
+```
+http://192.168.5.54:27070/actuator/filters
+```
 
 
 
@@ -98,7 +110,7 @@ zuul:
 
 这样做还有一个好处，就是可以在zuul的前端加入nginx，nginx把所有的/api请求转发到zuul上。
 
-**注意：zuul.routes的配置，支持/bus在线属性配置。**
+**注意：zuul.routes的配置，支持/actuator/bus-refresh在线属性配置。**
 
 ### 2.2 敏感的Header设置
 
@@ -125,7 +137,7 @@ zuul:
 
 你也可以通过设置，zuul.ignoredHeaders来禁止那些请求头传递到服务，查看zuul代码，zuul.sensitive-headers的请求头会被存放到zuul.ignoredHeaders。
 
-以上的配置支持/bus动态刷新配置。
+以上的配置支持/actuator/bus-refresh动态刷新配置。
 
 ### 2.3 Zuul上传文件
 
@@ -136,9 +148,9 @@ spring:
   http:   
     multipart: 
       # 整个请求大小限制(1个请求可能包括多个上传文件)
-      max-request-size: 20Mb
+      max-request-size: 20MB
       # 单个文件大小限制
-      max-file-size: 10Mb   
+      max-file-size: 10MB   
 ```
 
 测试：postman发送post请求，http://192.168.5.31:8090/api/sampleservice/uploadFile
@@ -173,15 +185,19 @@ PRE（预处理）：这种过滤器在请求被路由之前调用。可利用�
 
 ROUTE（路由）：这种过滤器将请求路由到微服务，用于构建发送给微服务的请求。
 
-POST（后处理）：这种过滤器在路由到微服务以后执行，用于为响应添加Http Header、收集统计信息、将响应发送给客户端等。
+ERROR（错误处理）：发生错误时执行本过滤器。
 
-ERROR（错误处理）：发省错误是执行该过滤器。
+POST（后处理）：这种过滤器在路由到微服务以后执行，用于为响应添加Http Header、收集统计信息、将响应发送给客户端等。
 
 STATIC：不常用，直接在Zuul中生成响应，不将请求转发到后端微服务。
 
-zuul过滤器执行顺序与抛出异常处理顺序，如下：
+zuul过滤器执行顺序与抛出异常处理顺序，如下：**ZuulServlet代码**
 
-ZuulServlet代码
+正常执行(我异常抛出)情况：preRoute->route->postRoute。
+
+异常执行，参见“2.4.6 异常处理”。
+
+
 
 ```java
 @Override
@@ -241,7 +257,7 @@ DebugFilter：调试过滤器，当设置zuul.debug.request=true，并且请求�
 
 ROUTE 类型过滤器：
 
-SendForwardFilter：使用Servlet RequestDispathcer转发请求，转发位置存在在RequestContext的属性FilterConstant.FORWARD_TO_KEY中。用于zuul自身转发(forward)。
+SendForwardFilter：使用Servlet RequestDispathcer转发请求(内部转发)，转发位置存在在RequestContext的属性FilterConstant.FORWARD_TO_KEY中。用于zuul自身转发(forward)。
 
 ```yaml
 zuul:
@@ -256,7 +272,7 @@ SendResponseFilter：把调用微服务(service)的响应结果(响应头和响�
 
 ERROR 类型过滤器：
 
-SendErrorFilter：若RequestContext.getThrowable()不为null，则默认转发到/error，也可以使用error.path属性来修改。
+SendErrorFilter：若RequestContext.getThrowable()结果不为null，则默认转发到/error，也可以使用error.path属性来修改。
 
 **@EnableZuulProxy所启动过滤器**
 
@@ -318,6 +334,10 @@ public class PreRequestLogFilter extends ZuulFilter {
 
 #### 2.4.3 伟大的RequestContext
 
+```java
+RequestContext requestContext = RequestContext.getCurrentContext();
+```
+
 zuul过滤器中最关键的技术就是RequestContext，其是一个上下文对象，包含zuul使用的几乎所有技术。下面说几个重点的：
 
 1.其继承了ConcurrentHashMap对象，实现了Map所有的接口。
@@ -330,9 +350,9 @@ zuul过滤器中最关键的技术就是RequestContext，其是一个上下文�
 
 5.任何响应的输出，不要直接使用response提供的方法来操作（RequestContext.currentContext().getResponse().xxx())，应该使用RequestContext提供的方法来设置response相关数据，例如：添加响应头RequestContext.currentContext().addZuulRequestHeader("code","ok");你调用任何RequestContext上的操作response的相关方法，SendResponseFilter过滤器(zuul原生)都会帮你输出。例如：setResponseBody(String)、setResponseDataStream(InputStream)、addZuulResponseHeader(String, String)、setOriginContentLength(Long)等。
 
-6.setRouteHost(new URL("http:/xxx"))，这个类似于nginx的proxyPass ip地址，请求会被zuul转发到这个地址。
+6.setRouteHost(new URL("http:/xxx"))，设置路由(转发)到的主机，这个类似于nginx的proxyPass ip地址，请求会被zuul转发到这个地址。
 
-7.SERVICE_ID_KEY，设置请求的服务编码，例如：RequestContext.getCurrentContext().put(FilterConstants.SERVICE_ID_KEY, "myservices");，这里的服务可以是eureka上的服务、在配置文件zuul.route声明的手工服务等，你可以通过编程的方式来改变请求的服务。例如：上面的代码手工指定服务，
+7.SERVICE_ID_KEY，设置请求的服务编码，例如：RequestContext.getCurrentContext().put(FilterConstants.SERVICE_ID_KEY, "myservices");，这里的服务可以是eureka上的服务、也可以是配置文件zuul.route声明的手工服务等，你可以通过编程的方式来改变请求的服务。例如：上面的代码手工指定服务，
 
 ```yaml
 zuul:
@@ -365,9 +385,9 @@ zuul的关键字和内置过滤器执行顺序都在这个常量类中定义。�
 	}
 ```
 
-zuul根据这个值来决定过滤器执行的先后顺序，同一种filterType类型的两个ZuulFilter的filterOrder()不能相同，但不同种类filterType的filterOrder()可以相同，因为zuul是逐个类型(filterType)执行的。
+zuul根据这个值来决定过滤器执行的先后顺序，同一种filterType类型的两个ZuulFilter的filterOrder()不能相同，但不同种类filterType的filterOrder()可以相同，因为zuul是逐个类型(filterType)执行的，PRE->ROUTE->POST。
 
-技巧：因为PRE类型，可用的filterOrder()不多，一般情况下应使用2、3、4，这个可以通过查看FilterConstants常量来理解。如果你需要定义4个PRE类型的过滤器，filterOrder不够用了，这里有个技巧，你可以把两个没有相互依赖关系的ZuulFilter都定义为同一个filterOrder()，例如都定义为3。
+技巧：因为PRE类型，可用的filterOrder()不多，一般情况下应使用2、3、4，这个可以通过查看FilterConstants常量来理解。如果你需要定义4个PRE类型的过滤器，filterOrder不够用了，这里有个技巧，你可以把两个没有先后依赖关系的ZuulFilter都定义为同一个filterOrder()值，例如都定义为3。
 
 #### 2.4.6 异常处理
 
@@ -419,7 +439,7 @@ com.netflix.zuul.http.ZuulServlet：
 
 PRE、ROUTE类型过滤器，抛出ZuulException异常时，中断程序，然后先由ERROR类型过滤器处理，然后再由POST类型过滤器处理(输出)。
 
-POST类型过滤器，抛出ZuulException异常时，中断程序，然后只由ERROR类型的过滤器来处理。
+POST类型过滤器，抛出ZuulException异常时，中断程序，然后只由ERROR类型的过滤器来处理。这个感觉有点乱了，最好不要在POST类型过滤器抛出ZuulException类型异常。
 
 **Throwable异常：**
 
@@ -522,7 +542,7 @@ POST类型过滤器的run()方法使用如下try、catch策略保证抛出异常
 
 1.使用RequestContext.getThrowable()来获取异常
 
-2.响应输出不应该直接使用RequestContext.getResponse()来获取HttpServletResponse来输出响应信息，应该使用	RequestContext.addZuulResponseHeader(name,value)、RequestContext.setResponseDataStream(...)等方法来写响应信息到上下文，然后由zuul系统提供的SendResponseFilter来负责响应输出。
+2.响应输出不应该直接使用RequestContext.getResponse()来获取HttpServletResponse来输出响应信息，应该使用	RequestContext.addZuulResponseHeader(name,value)、RequestContext.setResponseDataStream(...)等方法来写响应信息到上下文，然后由zuul系统提供的SendResponseFilter来负责响应输出，不要使用原生的HttpServletResponse来输出。
 
 3.ERROR过滤器只应关注PRE、ROUTE类型的过滤器抛出ZuulException异常如果处理，不用关心POST类型过滤器抛出异常（因为POST类型不应抛出异常，当前发生异常只写日志）。
 
@@ -554,7 +574,7 @@ POST类型过滤器的run()方法使用如下try、catch策略保证抛出异常
 
 #### 2.4.7 response输出
 
-PRE和ROUTE过滤器、POST过滤器(在SendResponseFilter之前先执行POST过滤器)，不应使用RequestContext.getResponse()获取的HttpServletResponse直接输出内容，应该使用RequestContext内置的reponse相关方法，然后由SendResponseFilter来负责输出。
+PRE和ROUTE过滤器、POST过滤器(在SendResponseFilter之前先执行POST过滤器)，不应使用RequestContext.getResponse()获取的HttpServletResponse直接输出内容，应该使用RequestContext内置的reponse操作方法，然后由SendResponseFilter来负责输出。
 
 ```java
 
@@ -611,7 +631,7 @@ PRE和ROUTE过滤器、POST过滤器(在SendResponseFilter之前先执行POST过
 
 #### 2.4.1 hystrix监控
 
-http://zuul-ip:zuul-port/hystrix.stream，查看会查看到hystrix监控数据，也就是说默认情况下zuul的请求是收到zuul保护的，而且还能看出Thread Pools无相关数据，也证明了默认使用的hystrix隔离策略时SEMAPHORE。
+http://zuul-ip:actuator-port/actuator/hystrix.stream（例如：http://192.168.5.54:27070/actuator/hystrix.stream），查看会查看到hystrix监控数据，也就是说默认情况下zuul的请求是收到zuul保护的，而且还能看出Thread Pools无相关数据，也证明了默认使用的hystrix隔离策略是SEMAPHORE。
 
 #### 2.4.2 自定义回退类
 
@@ -713,41 +733,50 @@ zuul:
   forceOriginalQueryStringEncoding: true
 ```
 
-注意：只对SimpleHostRoutingFilter有效。
+注意：这个特殊的标志只适用于SimpleHostRoutingFilter，并且您失去了使用RequestContext.getCurrentContext(). setrequestqueryparams (someOverriddenParameters)轻松覆盖查询参数的能力，因为查询字符串现在直接从原始HttpServletRequest获取。
 
 
 
 ### ~~2.7 Hystrix隔离策略和线程池~~
 
-修改为线程隔离后，服务运行的线程池位置，两种模式只能选择一种：
-
-1. 在同一个线程池RibbonCommand下运行，所有的服务都在这个RibbonCommand线程池要运行。
-2. 每个服务都有一个独立的线程。
-
-以上两个都有问题，第1种，如果所有的服务都在一个线程池下运行，那就失去了线程隔离的意义，一个服务出现阻塞，则整个RibbonCommand线程池瘫痪。第2种，如果调用100个服务，就分配100个线程池吗，这也有问题。
-
-最理想，默认都使用RibbonCommand线程池调用服务，但可以为某个服务单独设置一个线程池。
-
 #### 2.7.1 配置zuul使用thread隔离策略
 
-默认情况下，Zuul的Hystrix隔离策略时**SEMAPHORE**。
+默认情况下，Zuul的Hystrix隔离策略时**SEMAPHORE**。设置为THREAD适用于提供的服务不多但访问量很大的情况下，否则默认的SEMAPHORE更适合。
 
 可以使用zuul.ribbon-isolation-strategy=thread修改为THREAD隔离策略，修改后HystrixThreadPoolKey默认为RibbonCommand，这意味着，所有的路由HystrixCommand都会在相同的Hystrix线程池上执行。
 
 修改后可以通过hystrix的dashborad观察，可以看到ThreadPools栏有数据了。
 
-![](images/zull-thread-pool-default.png)
+新版的监控URL：http://192.168.5.54:27070/actuator/hystrix.stream
+
+![](images/zuul-thread-pool-default.png)
 
 也可以为每个服务(路由)，使用独立的线程池，并使用hystrix.threadpool.服务名，来定制线程池大写：
 
 ```yaml
 zuul:
+  ribbon-isolation-strategy: thread
   threadpool:
-    useSeparateThreadPools: true
+    useSeparateThreadPools: true  # 每个服务都有自己的线程池，而不是共享一个
+    threadPoolKeyPrefix: zuulsgw # 指定线程池前缀，方便调试
+    
 hystrix: 
   threadpool: 
+    # 设置默认情况下每个服务的线程池
+    default:
+      coreSize:1 # 核心线程数(默认10)，等同于ThreadPoolExecutor.corePoolSize参数
+      maxinumSize: 100 # 最大值允许线程数，等同于ThreadPoolExecutor.maximumPoolSize
+      maxQueueSize: -1 # 等待执行队列大小，等同于ThreadPoolExecutor.workQueue,-1为SynchronousQueue，大于零为new LinkedBlockingQueue(maxQueueSize)
+      queueSizeRejectionThread: 20 # 队列允许排队的个数，超出这个阈值也被拒绝。maxQueueSize=-1没有意义
+      keepAliveTimeMinutes: 1 # 线程保持(存活)的时间(分钟)，超出coreSize小于maxinumSize时，创建线程使用后存活时间，等同于等同于ThreadPoolExecutor.keepAliveTime
+      allowMaximumSizeToDivergeFromCoreSize: true # 设置keepAliveTimeMinutes属性是起作用，默认为false
+    # 特殊设置某个服务的线程池  
     sc-sampleservice: 
-      coreSize: 3    
+      coreSize: 2
+      maxinumSize: 100
+      maxQueueSize: -1
+      keepAliveTimeMinutes: 2
+      allowMaximumSizeToDivergeFromCoreSize: true
 ```
 
 ![](images/zuul-useSeparateThreadPools.png)
@@ -889,9 +918,9 @@ ribbonTimeout超时报错：Caused by: java.net.SocketTimeoutException: Read tim
 
 hystrixTimeout超时报错：Caused by: com.netflix.hystrix.exception.HystrixRuntimeException: dfss-upload timed-out and no fallback available.
 
-#### 2.8.4 ribbon和zuul.host timeout
+#### 2.8.4 ribbon和zuul.host超时(timeout)
 
-ribbon.ReadTimeout， ribbon.SocketTimeout这两个就是ribbon超时时间设置，当在yml写时，应该是没有提示的，给人的感觉好像是不是这么配的一样，其实不用管它，直接配上就生效了。
+ribbon.ConnectTimeout， ribbon.ReadTimeout这两个就是ribbon超时时间设置，当在yml写时，应该是没有提示的，给人的感觉好像是不是这么配的一样，其实不用管它，直接配上就生效了。
 还有zuul.host.connect-timeout-millis， zuul.host.socket-timeout-millis这两个配置，这两个和上面的ribbon都是配超时的。区别在于，如果路由方式是serviceId的方式，那么ribbon的生效，如果是url的方式，则zuul.host开头的生效。（此处重要！使用serviceId路由和url路由是不一样的超时策略）。
 
 zuul配置设置操作，ribbon的超时和zuul.host的超时都要设置
@@ -919,7 +948,7 @@ ribbon:
 
 ### 2.9 zuul使用ribbon重试
 
-测试重试，后台开启两个sc-sampleservice的docker，使用zuul做为服务网关，接收请求，正常情况下是负载均衡分发，当停止一个sc-sampleservice的docker，再发送请求到zuul看能否正常返回结果，并通过日志查看是否有重试操作。
+测试重试，后台开启两个sc-sampleservice的docker，使用zuul做为服务网关，接收请求，正常情况下是负载均衡分发，当停止一个sc-sampleservice的docker，再发送请求到zuul看能正常返回结果，并通过日志查看有重试操作。
 
 默认情况：就已经开启了重试，重试的默认值：maxAutoRetries = 0，maxAutoRetriesNextServer = 1，测试通过。
 
@@ -988,7 +1017,7 @@ ribbon:
 
 **如果路由方式是serviceId的方式，那么ribbon的生效**，例如：
 
-1.基于eureka发现服务，自动转发不用认为干预。
+1.基于eureka发现服务，自动转发不用人为干预。
 
 2.RequestContext.getCurrentContext().set(FilterConstants.SERVICE_ID_KEY, serviceId);
 
@@ -1042,7 +1071,11 @@ zuul:
 
 http://192.168.5.31:8090/api/dongyuit/index.html
 
-但要注意：上面的整合方法，请求不支持ribbon和hystrix，也就是说不支持负载均衡和hystrix容错。待以后解决。
+但要注意：上面的整合方法，请求不支持ribbon和hystrix，也就是说不支持负载均衡和hystrix容错，因为其走的不是RibbonRouteFilter，而是SimpleHostRoutingFilter。
+
+RibbonRouteFilter：使用Ribbon、Hystrix、HTTP客户端发送请求。请求的servletId对应RequestContext的属性FilterConstants.SERVICE_ID_KEY。
+
+SimpleHostRoutingFilter：如果路由配置直接指定了服务的url，而不能从eureka中获取位置，则使用这个过滤器。
 
 #### 4.2 sidecar
 
@@ -1057,6 +1090,8 @@ http://192.168.5.31:8090/api/dongyuit/index.html
 ### 查看过滤器(ZuulFilter)
 
 http://192.168.5.54:27070/actuator/filters
+
+你可以观察到filter的执行顺序。
 
 ### 查看路由配置(Route)
 

@@ -36,13 +36,13 @@ spring-cloud-starter-bus-amqp：基于rabbitmq实现的属性刷新，服务器�
 
 spring-boot-starter-security：实现config server访问的安全认证，使用用户名和密码才能访问配置服务器。
 
-spring-boot-starter-actuator：spring boot actuator，实现属性刷新(/actuator/bus-refresh)。
+spring-boot-starter-actuator：spring boot actuator，提供/actuator/xxx工具集，例如：实现属性刷新(/actuator/bus-refresh)。
 
 如果你不需要考虑安全，不需要使用属性刷新，则只需要spring-cloud-config-server包就可以提供config server服务。
 
 ### yaml
 
-#### bootstramp.yml
+#### bootstrap.yml
 
 ```yaml
 spring:
@@ -62,7 +62,15 @@ spring:
   profiles: dev
 encrypt:
   key: 12345678 # 配置文件加密秘钥
+# 测试环境        
+---
+spring:
+  profiles: test
+encrypt:
+  key: 12345678 # 配置文件加密秘钥  
 ```
+
+这里使用[---]分隔符加spring.profiles属性来区别不同环境的配置，其将当前环境来使用不同的配置属性。
 
 #### application.yml
 
@@ -92,6 +100,8 @@ management:
         - "*"
 ```
 
+注意：actuator的配置，其配置了健康检查，并且暴露了所有的actuator端点，尽管这里暴露了所有的actuator端点，但actuator内端点的访问控制可以通过spring security来控制，例如，配置/actuator/xxx公开访问，/actuator/yyy只能登录后访问，一般都是配置一个httpBasic认证(用户名和密码)访问。
+
 #### application-dev.yml
 
 ```yaml
@@ -107,7 +117,7 @@ spring:
       server:
         git:
           # Spring Cloud Config配置中心使用gitlab的话，要在仓库后面加后缀.git，而GitHub不需要
-          uri: http://39.105.202.xxx:pppp/zhangdb/config-repo.git
+          uri: http://192.168.5.32/zhangdb/config-repo.git
           # 搜索属性文件路径,可以是正则表达式,默认只搜索根目录下的文件,配置为/**搜索所有子目录下的文件
           search-paths: /**
           # 因为github的账户和密码不能泄露,因此需要在启动脚本中加入--spring.cloud.config.server.git.username=xxxx --spring.cloud.config.server.git.password=xxxx 
@@ -143,6 +153,7 @@ public class ConfigServerApplication {
 			// Spring Security 默认开启了http页面认证登陆，需要修改为http basic模式
 			httpSecurity.authorizeRequests().anyRequest().authenticated().and().httpBasic().and().csrf()
 			.ignoringAntMatchers("/actuator/**","/encrypt","/decrypt");
+			
 		}
 	}
 
@@ -189,15 +200,27 @@ spring-boot-starter-actuator：实现属性刷新(/actuator/bus-refresh)。
 
 config-repo仓库
 
+​    应用名(目录)
+
+​       应用名.yml(文件)
+
+​       应用名-dev.yml(文件)   // 开发环境配置文件
+
+​       应用名-prod.yml(文件)   // 生产环境配置文件
+
+例如：dy-eureka项目    
+
 ​	dy-eureka(目录)
 
 ​		dy-eureka.yml(文件)
 
 ​		dy-eureka-dev.yml(文件)
 
+​		dy-eureka-prod.yml(文件)
+
 这里使用dy-eureka为例，一般在config-repo仓库下创建dy-eureka目录，然后在下面按照文件名规则创建：
 
-dy-eureka.yml（公共属性文件）、dy-eureka-dev.yml（开发环境属性文件）、dy-eureka-test.yml（测试环境属性文件）；
+dy-eureka.yml（公共属性文件）、dy-eureka-dev.yml（开发环境属性文件）、dy-eureka-prod.yml（生产环境属性文件）；
 
 #### 合并属性和覆盖
 
@@ -388,8 +411,10 @@ spring:
 
 ### 发送刷新(bus-refresh)请求
 
+例如：刷新sgw项目，发送请求到spring cloud config，并在/actuator/bus-refresh/项目名，来说刷新指定项目的配置。
+
 ```
-curl -u dy-config:12345678 -X POST http://192.168.5.76:29000/actuator/bus-refresh/sgw
+curl -u dy-config:12345678 -X POST http://192.168.5.76:9000/actuator/bus-refresh/sgw
 ```
 
 
@@ -454,7 +479,7 @@ encrypt:
   key: xxxxx 
 ```
 
-修改yaml属性为加密值，注意：点引号、{cipher}前缀
+修改yaml属性为加密值，注意：点引号'{cipher}前缀
 
 ```yaml
 spring: 
@@ -465,6 +490,6 @@ spring:
 #### 解密
 
 ```
-curl -u dy-config:Study-401 http://10.60.33.18:9000/decrypt -d f86ff2a9e2cee0cb5a5ff1c1060862dcdb64afe3287b8256cb27cd0c440887f6
+curl -u dy-config:123456 http://10.60.33.18:9000/decrypt -d f86ff2a9e2cee0cb5a5ff1c1060862dcdb64afe3287b8256cb27cd0c440887f6
 ```
 
